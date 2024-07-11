@@ -25,7 +25,7 @@
 
 # Issue #117 where neeed to sleep on startup otherwis emight not boot
 from time import sleep
-sleep(0.5)
+sleep(1)
 
 # import enviro firmware, this will trigger provisioning if needed
 import enviro

@@ -221,6 +221,7 @@ def reconnect_wifi(ssid, password, country, hostname=None):
   if status >= CYW43_LINK_JOIN and status < CYW43_LINK_UP:
     logging.info("> Disconnecting...")
     wlan.disconnect()
+    # Pin(WIFI_CS_PIN, Pin.OUT, value=True)
     try:
       wait_status(CYW43_LINK_DOWN)
     except Exception as x:
@@ -421,7 +422,7 @@ def get_sensor_readings():
 def save_reading(readings):
   # open todays reading file and save readings
   helpers.mkdir_safe("readings")
-  readings_filename = f"readings/{helpers.date_string()}.csv"
+  readings_filename = f"readings/{helpers.datetime_file_string()}.txt"
   new_file = not helpers.file_exists(readings_filename)
   with open(readings_filename, "a") as f:
     if new_file:
@@ -526,8 +527,68 @@ def upload_readings():
     wlan.active(True)
     wlan.disconnect()
     wlan.active(False)
+    # Pin(WIFI_CS_PIN, Pin.OUT, value=True)
 
   return True
+
+# define DELAYOFF used to ensure enviro will power down even if it hangs
+# ----------------------------------------------------------------------
+from machine import Pin
+from rp2 import PIO, StateMachine, asm_pio
+
+@asm_pio(sideset_init=PIO.OUT_HIGH)
+def delayoff_prog():   
+    label('d_loop')
+    jmp(y_dec, 'd_loop') [1]
+    label('done')
+    jmp('done').side(0)
+
+class DELAYOFF:
+    def __init__(self, pin, delay, sm_id=0):
+        delay_ms=int(delay * 60 * 1000)
+        self._sm = StateMachine(sm_id, delayoff_prog, freq=2000, sideset_base=Pin(pin))
+        self._sm.put(delay_ms)
+        self._sm.exec('pull()')
+        self._sm.exec("mov(y, osr)") #load max count into y
+        self._sm.active(1)
+        logging.debug(f'> delayoff set on gpio{pin:} for {delay_ms:} ms')
+
+def arm_watchdog():
+  # set default alarm now in case processor hangs.  Normally ths is overwritten by sleep()
+
+  if helpers.file_exists("watchdog_live.txt"):
+    os.remove("watchdog_live.txt")
+    logging.warn("> * * Processor recovered by watchdog * *")
+
+  # this code extracted from sleep TODO make into routine shared by both -----------------
+  dt = rtc.datetime()
+  hour, minute, second = dt[3:6]
+
+  # make sure the Alarm in the event of watchdog is set to 1 minute ahead 
+  minute += int(config.pio_watchdog_time)
+  minute += 1
+  #For edge case??  May not be needed
+  if second > 55:
+    minute += 1
+
+  while minute >= 60:      
+    minute -= 60
+    hour += 1
+  if hour >= 24:
+    hour -= 24
+  ampm = "am" if hour < 12 else "pm"
+
+  logging.info(f"  - setting default alarm to wake at {hour:02}:{minute:02}{ampm}")
+
+  # sleep until next scheduled reading
+  rtc.set_alarm(0, minute, hour)
+  rtc.enable_alarm_interrupt(True)
+  #------------------------------------------------------------------end copied from sleep
+
+  # power will be pulled based on wathdog time (set in config file in minutes)
+  delayoff = DELAYOFF(HOLD_VSYS_EN_PIN, int(config.pio_watchdog_time))
+  with open("watchdog_live.txt", "w") as hangfile:
+    hangfile.write("")
 
 def startup():
   import sys
@@ -552,6 +613,9 @@ def startup():
 
   # log the wake reason
   logging.info("  - wake reason:", wake_reason_name(reason))
+  # set watchdog if configured in config file
+  if config.pio_watchdog_time is not 0:
+      arm_watchdog()
 
   # also immediately turn on the LED to indicate that we're doing something
   logging.debug("  - turn on activity led")
@@ -614,9 +678,15 @@ def sleep(time_override=None):
   # sleep until next scheduled reading
   rtc.set_alarm(0, minute, hour)
   rtc.enable_alarm_interrupt(True)
+  
+  # delete watchdog file
+  if helpers.file_exists("watchdog_live.txt"):
+      os.remove("watchdog_live.txt")
 
   # disable the vsys hold, causing us to turn off
   logging.info("  - shutting down")
+  # Pin(WIFI_CS_PIN, Pin.OUT, value=True)
+  
   hold_vsys_en_pin.init(Pin.IN)
 
   # if we're still awake it means power is coming from the USB port in which
@@ -635,7 +705,8 @@ def sleep(time_override=None):
     if hasattr(board, "check_trigger"):
       board.check_trigger()
 
-    #time.sleep(0.25)
+    # To try and reduce battery consumption and heating
+    time.sleep(0.25)
 
     if button_pin.value(): # allow button to force reset
       break
