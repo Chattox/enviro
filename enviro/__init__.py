@@ -205,6 +205,7 @@ def reconnect_wifi(ssid, password, country, hostname=None):
         return True
       if status < 0:
         raise Exception(status_names[status])
+    logging.error("> timed out on wifi connection attempt")
     return False
 
   wlan.active(True)
