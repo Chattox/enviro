@@ -15,14 +15,17 @@ def upload_reading(reading):
 
   try:
     # post reading data to http endpoint
+    logging.debug(' - sending http endpoint request')
     result = urequests.post(url, auth=auth, json=reading)
+    logging.debug(' - closing http endpoint request')
     result.close()
 
+    logging.debug(f" - upload response status code: {result.status_code}")
     if result.status_code in [200, 201, 202]:
       return UPLOAD_SUCCESS
 
     logging.debug(f"  - upload issue ({result.status_code} {result.reason})")
-  except:
-    logging.debug(f"  - an exception occurred when uploading")
+  except Exception as e:
+    logging.error("  - an exception occurred when uploading", e)
 
   return UPLOAD_FAILED
