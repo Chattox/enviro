@@ -437,19 +437,25 @@ def save_reading(readings):
 
 # save the provided readings into a cache file for future uploading
 def cache_upload(readings):
-  payload = {
-    "nickname": config.nickname,
-    "timestamp": helpers.datetime_string(),
-    "readings": readings,
-    "model": model,
-    "uid": helpers.uid()
-  }
+  try:
+    with open("log.txt", "r") as log_file:
+      logs = log_file.read()
+      payload = {
+        "nickname": config.nickname,
+        "timestamp": helpers.datetime_string(),
+        "readings": readings,
+        "model": model,
+        "uid": helpers.uid(),
+        "logs": logs
+      }
 
-  uploads_filename = f"uploads/{helpers.datetime_file_string()}.json"
-  helpers.mkdir_safe("uploads")
-  with open(uploads_filename, "w") as upload_file:
-    #json.dump(payload, upload_file) # TODO what it was changed to
-    upload_file.write(ujson.dumps(payload))
+      uploads_filename = f"uploads/{helpers.datetime_file_string()}.json"
+      helpers.mkdir_safe("uploads")
+      with open(uploads_filename, "w") as upload_file:
+        #json.dump(payload, upload_file) # TODO what it was changed to
+        upload_file.write(ujson.dumps(payload))
+  except Exception as e:
+    logging.error("> error caching upload file", e)
 
 # return the number of cached results waiting to be uploaded
 def cached_upload_count():
