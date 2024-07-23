@@ -203,6 +203,14 @@ def reconnect_wifi(ssid, password, country, hostname=None):
       status = dump_status()
       if status == expected_status:
         return True
+      if status == -2:
+        while status == -2:
+          logging.error("> could not find matching SSID, retrying")
+          status = dump_status()
+          if status == expected_status:
+            return True
+          if status < 0 and not -2: raise Exception(status_names[status])
+          time.sleep(5)
       if status < 0:
         raise Exception(status_names[status])
     logging.error("> timed out on wifi connection attempt")
@@ -224,6 +232,7 @@ def reconnect_wifi(ssid, password, country, hostname=None):
     wlan.disconnect()
     try:
       wait_status(CYW43_LINK_DOWN)
+      wlan.deinit()
     except Exception as x:
       raise Exception(f"Failed to disconnect: {x}")
   logging.info("> Ready for connection!")
@@ -533,6 +542,7 @@ def upload_readings():
     wlan.active(True)
     wlan.disconnect()
     wlan.active(False)
+    wlan.deinit()
 
   return True
 
